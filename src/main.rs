@@ -106,7 +106,7 @@ impl Article {
             write!(
                 f,
                 "[^{}]: {}",
-                i,
+                i + 1,
                 note.into_iter()
                     .map(Content::markdown)
                     .reduce(|acc, content| acc + "    " + &content)
@@ -167,7 +167,7 @@ impl Section {
 enum Content {
     Paragraph(String),
     Blockquote(String),
-    OrderedList(Vec<String>),
+    OrderedList(Vec<(Option<String>, String)>, usize),
     DefinitionList(Vec<(String, String)>),
 }
 
@@ -180,8 +180,14 @@ impl Content {
             "p" => Self::Paragraph(markdownify(el, markdownify_ignore).trim().to_string()),
             "ol" => Self::OrderedList(
                 el.child_elements()
-                    .map(|el| markdownify(el, markdownify_ignore).trim().to_string())
+                    .map(|el| {
+                        (
+                            el.value().id().map(|id| format!("<a id=\"{}\"></a>", id)),
+                            markdownify(el, markdownify_ignore).trim().to_string(),
+                        )
+                    })
                     .collect(),
+                el.attr("start").and_then(|s| s.parse().ok()).unwrap_or(1),
             ),
             "dl" => Self::DefinitionList(
                 el.child_elements()
@@ -207,10 +213,12 @@ impl Content {
                     .collect::<String>()
                     + "\n\n"
             }
-            Self::OrderedList(l) => {
-                l.iter()
+            Self::OrderedList(l, start) => {
+                l.into_iter()
                     .enumerate()
-                    .map(|(i, str)| format!("{}. {}\n", i, str))
+                    .map(|(i, (anchor, str))| {
+                        format!("{}. {} {}\n", start + i, anchor.unwrap_or_default(), str)
+                    })
                     .collect::<String>()
                     + "\n\n"
             }
