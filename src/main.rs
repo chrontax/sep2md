@@ -1,6 +1,6 @@
 use std::{
     env::args,
-    fs::File,
+    fs::{self, File},
     io::{self, Write},
     iter::Peekable,
     path::Path,
@@ -8,7 +8,7 @@ use std::{
 
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
-use scraper::{ElementRef, Html, Node, Selector};
+use scraper::{CaseSensitivity, ElementRef, Html, Node, Selector};
 
 const SKIP_ELEMENTS: [&str; 1] = ["hr"];
 
@@ -159,8 +159,23 @@ struct Section {
 impl Section {
     fn from_iter<'a, I: Iterator<Item = ElementRef<'a>>>(iter: &mut Peekable<I>) -> Self {
         let head = iter.next().unwrap();
-        let id = head.value().id().map(String::from);
-        let title = markdownify(head, &|_| false);
+        let mut id = head.value().id().map(String::from);
+        let title;
+
+        if head.children().count() == 1
+            && let Some(a) = head.child_elements().next()
+            && a.value().name() == "a"
+        {
+            id = id.and_then(|_| {
+                a.value()
+                    .attr("name")
+                    .and_then(|_| a.value().id())
+                    .map(String::from)
+            });
+            title = markdownify(a, &|_| false);
+        } else {
+            title = markdownify(head, &|_| false);
+        }
         let level = head.value().name()[1..].parse().unwrap();
         let mut text = Vec::new();
 
@@ -201,6 +216,7 @@ enum Content {
     Blockquote(String),
     OrderedList(Vec<(Option<String>, String)>, usize),
     DefinitionList(Vec<(String, String)>),
+    Figure { caption: String, path: String },
     Empty,
 }
 
@@ -240,6 +256,32 @@ impl Content {
                 );
                 Self::Empty
             }
+            "div"
+                if el
+                    .value()
+                    .has_class("figure", CaseSensitivity::AsciiCaseInsensitive) =>
+            {
+                let img = el
+                    .select(&Selector::parse("img").unwrap())
+                    .next()
+                    .expect("Figure lacks image");
+                let path = img.value().attr("src").unwrap().to_string();
+                eprintln!("Downloading figure to: figures/{}", path);
+                let caption = img.value().attr("alt").unwrap_or("").to_string();
+                if !matches!(fs::exists("figures"), Ok(true)) {
+                    fs::create_dir("figures").expect("Failed to create figures directory");
+                }
+                File::create(format!("figures/{}", path))
+                    .expect("Failed to create figure file")
+                    .write_all(
+                        &reqwest::blocking::get(format!("{}/{}", BASE_URL.get().unwrap(), path))
+                            .expect("Failed to download figure")
+                            .bytes()
+                            .expect("Failed to read figure bytes"),
+                    )
+                    .expect("Failed to write figure file");
+                Self::Figure { caption, path }
+            }
             other => {
                 eprintln!("Unexpected content tag: {}. Ignoring...", other);
                 Self::Empty
@@ -270,6 +312,7 @@ impl Content {
                 .map(|(dt, dd)| format!("{}\n\n: {}\n\n", dt, dd))
                 .collect::<String>(),
             Self::Empty => String::new(),
+            Self::Figure { caption, path } => format!("![{}](figures/{})\n\n", caption, path),
         }
     }
 }
