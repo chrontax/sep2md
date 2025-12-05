@@ -329,7 +329,7 @@ fn markdownify<F: Fn(&Node) -> bool>(el: ElementRef<'_>, ignore: &F) -> String {
         } else if value.is_element() {
             let el = value.as_element().unwrap();
             match el.name() {
-                "em" => {
+                "em" | "i" => {
                     result.push('*');
                     result += &markdownify(ElementRef::wrap(child).unwrap(), ignore);
                     result.push('*');
@@ -361,6 +361,12 @@ fn markdownify<F: Fn(&Node) -> bool>(el: ElementRef<'_>, ignore: &F) -> String {
                     }
                 }
                 "p" => result += &markdownify(ElementRef::wrap(child).unwrap(), ignore),
+                "strong" | "b" => {
+                    result += &format!(
+                        "**{}**",
+                        markdownify(ElementRef::wrap(child).unwrap(), ignore)
+                    )
+                }
                 other => eprintln!("Unexpected tag: {}", other),
             }
         }
