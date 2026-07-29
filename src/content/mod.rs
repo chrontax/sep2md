@@ -15,27 +15,30 @@ pub enum Content {
         caption: Option<String>,
         rows: Vec<Vec<String>>,
     },
-    Figure { caption: String, path: String },
+    Figure {
+        caption: String,
+        path: String,
+    },
     Empty,
 }
 
 impl Content {
-    pub fn from_element<F: Fn(&scraper::Node) -> bool>(
+    pub fn flatten_element<F: Fn(&scraper::Node) -> bool>(
         el: ElementRef,
         ignore: &F,
         config: &Config,
-    ) -> Self {
+    ) -> Vec<Self> {
         match el.value().name() {
-            "p" => block::handle_paragraph(el, ignore, config),
-            "blockquote" => block::handle_blockquote(el, ignore, config),
-            "ol" => block::handle_ordered_list(el, ignore, config),
-            "dl" => block::handle_definition_list(el, ignore, config),
-            "div" => block::handle_div(el, ignore, config),
-            "ul" => block::handle_unordered_list(el, ignore, config),
-            "table" => block::handle_table(el, ignore, config),
+            "div" => block::flatten_div(el, ignore, config),
+            "p" => vec![block::handle_paragraph(el, ignore, config)],
+            "blockquote" => vec![block::handle_blockquote(el, ignore, config)],
+            "ol" => vec![block::handle_ordered_list(el, ignore, config)],
+            "dl" => vec![block::handle_definition_list(el, ignore, config)],
+            "ul" => vec![block::handle_unordered_list(el, ignore, config)],
+            "table" => vec![block::handle_table(el, ignore, config)],
             other => {
                 eprintln!("Unexpected content tag: {other}. Ignoring...");
-                Self::Empty
+                vec![Self::Empty]
             }
         }
     }
@@ -43,12 +46,7 @@ impl Content {
     pub fn markdown(self) -> String {
         match self {
             Self::Paragraph(p) => p + "\n\n",
-            Self::Blockquote(b) => {
-                b.lines()
-                    .map(|l| format!("> {l}"))
-                    .collect::<String>()
-                    + "\n\n"
-            }
+            Self::Blockquote(b) => b.lines().map(|l| format!("> {l}")).collect::<String>() + "\n\n",
             Self::List(s) => s + "\n\n",
             Self::DefinitionList(d) => d
                 .iter()

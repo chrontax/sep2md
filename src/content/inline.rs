@@ -12,11 +12,15 @@ fn emphasis_handler(el: ElementRef, out: &mut String, config: &Config) {
 
 fn link_handler(el: ElementRef, out: &mut String, config: &Config) {
     let a = el.value();
-    let mut href = a.attr("href").unwrap().to_string();
-    if !href.contains('/') && !href.contains('#') {
+    let mut href = a.attr("href").unwrap_or("").to_string();
+    let text = markdownify(el, &|_| false, config);
+    if href.is_empty() {
+        out.push_str(&text);
+        return;
+    }
+    if !href.starts_with("http") && !href.starts_with("mailto") && !href.starts_with('#') {
         href = format!("{}/{}", config.base_url, href);
     }
-    let text = el.text().next().unwrap_or("");
     out.push_str(&format!("[{text}]({href})"));
 }
 
@@ -31,7 +35,7 @@ fn superscript_handler(el: ElementRef, out: &mut String, _config: &Config) {
     }
 }
 
-fn inline_p_handler(el: ElementRef, out: &mut String, config: &Config) {
+fn basic_inline_handler(el: ElementRef, out: &mut String, config: &Config) {
     out.push_str(&markdownify(el, &|_| false, config));
 }
 
@@ -69,27 +73,25 @@ fn nested_ol_handler(el: ElementRef, out: &mut String, config: &Config) {
     out.push_str("\x00BLOCK_END\x00");
 }
 
-fn inline_handlers() -> Vec<(&'static str, InlineHandler)> {
-    vec![
-        ("em", emphasis_handler as InlineHandler),
-        ("i", emphasis_handler as InlineHandler),
-        ("a", link_handler as InlineHandler),
-        ("sup", superscript_handler as InlineHandler),
-        ("sub", sub_handler as InlineHandler),
-        ("p", inline_p_handler as InlineHandler),
-        ("strong", strong_handler as InlineHandler),
-        ("b", strong_handler as InlineHandler),
-        ("ul", nested_ul_handler as InlineHandler),
-        ("ol", nested_ol_handler as InlineHandler),
-    ]
-}
+const INLINE_HANDLERS: [(&str, InlineHandler); 11] = [
+    ("em", emphasis_handler),
+    ("i", emphasis_handler),
+    ("a", link_handler),
+    ("sup", superscript_handler),
+    ("sub", sub_handler),
+    ("p", basic_inline_handler),
+    ("abbr", basic_inline_handler),
+    ("strong", strong_handler),
+    ("b", strong_handler),
+    ("ul", nested_ul_handler),
+    ("ol", nested_ol_handler),
+];
 
 pub fn markdownify<F: Fn(&Node) -> bool>(
     el: ElementRef<'_>,
     ignore: &F,
     config: &Config,
 ) -> String {
-    let handlers = inline_handlers();
     let mut result = String::new();
     for child in el.children() {
         let value = child.value();
@@ -100,7 +102,10 @@ pub fn markdownify<F: Fn(&Node) -> bool>(
             result += value.as_text().unwrap();
         } else if value.is_element() {
             let child_el = value.as_element().unwrap();
-            if let Some((_, handler)) = handlers.iter().find(|(tag, _)| *tag == child_el.name()) {
+            if let Some((_, handler)) = INLINE_HANDLERS
+                .iter()
+                .find(|(tag, _)| *tag == child_el.name())
+            {
                 handler(ElementRef::wrap(child).unwrap(), &mut result, config);
             } else {
                 eprintln!("Unexpected inline tag: {}", child_el.name());
@@ -118,7 +123,10 @@ pub fn markdownify<F: Fn(&Node) -> bool>(
             let block = result[content_start..content_end].to_string();
             let placeholder = format!("\x00BLOCK{}\x00", blocks.len());
             blocks.push(block);
-            result.replace_range(abs_start..content_end + "\x00BLOCK_END\x00".len(), &placeholder);
+            result.replace_range(
+                abs_start..content_end + "\x00BLOCK_END\x00".len(),
+                &placeholder,
+            );
             i = abs_start + placeholder.len();
         } else {
             break;

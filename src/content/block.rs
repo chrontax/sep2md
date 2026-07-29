@@ -7,7 +7,7 @@ use crate::config::Config;
 use super::Content;
 use super::inline::markdownify;
 
-const FIGURE_CLASSES: [&str; 2] = ["figure", "figureright"];
+const FIGURE_CLASSES: [&str; 3] = ["figure", "figureright", "inner-fig"];
 
 pub fn handle_paragraph<F: Fn(&scraper::Node) -> bool>(
     el: ElementRef,
@@ -31,7 +31,7 @@ pub fn render_unordered_list<F: Fn(&scraper::Node) -> bool>(
     config: &Config,
     indent: usize,
 ) -> String {
-    let prefix = " ".repeat(indent);
+    let prefix = "  ".repeat(indent);
     let mut out = String::new();
     for li in el.child_elements() {
         let anchor = li
@@ -76,7 +76,7 @@ pub fn render_ordered_list<F: Fn(&scraper::Node) -> bool>(
     config: &Config,
     indent: usize,
 ) -> String {
-    let prefix = " ".repeat(indent);
+    let prefix = "  ".repeat(indent);
     let start: usize = el.attr("start").and_then(|s| s.parse().ok()).unwrap_or(1);
     let mut out = String::new();
     for (i, li) in el.child_elements().enumerate() {
@@ -142,11 +142,46 @@ pub fn handle_definition_list<F: Fn(&scraper::Node) -> bool>(
     while let Some(dt) = children.next() {
         if let Some(dd) = children.next() {
             let term = markdownify(dt, ignore, config).trim().to_string();
-            let def = markdownify(dd, ignore, config).trim().to_string();
+            let def = flatten_dd(dd, ignore, config);
             pairs.push((term, def));
         }
     }
     Content::DefinitionList(pairs)
+}
+
+fn flatten_dd<F: Fn(&scraper::Node) -> bool>(
+    el: ElementRef,
+    ignore: &F,
+    config: &Config,
+) -> String {
+    let mut out = String::new();
+    let mut inline = String::new();
+    for child in el.children() {
+        match child.value() {
+            scraper::Node::Text(t) => inline.push_str(t),
+            scraper::Node::Element(e) => {
+                if matches!(e.name(), "ul" | "ol" | "dl" | "table" | "blockquote") {
+                    if !inline.is_empty() {
+                        out.push_str(&inline);
+                        inline.clear();
+                    }
+                    let child_el = ElementRef::wrap(child).unwrap();
+                    for c in Content::flatten_element(child_el, ignore, config) {
+                        out.push_str(&c.markdown());
+                    }
+                } else {
+                    inline.push_str(&markdownify(
+                        ElementRef::wrap(child).unwrap(),
+                        ignore,
+                        config,
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+    out.push_str(&inline);
+    out.trim().to_string()
 }
 
 pub fn handle_table<F: Fn(&scraper::Node) -> bool>(
@@ -170,20 +205,11 @@ pub fn handle_table<F: Fn(&scraper::Node) -> bool>(
     Content::Table { caption, rows }
 }
 
-pub fn handle_div<F: Fn(&scraper::Node) -> bool>(
+fn handle_figure<F: Fn(&scraper::Node) -> bool>(
     el: ElementRef,
     ignore: &F,
     config: &Config,
 ) -> Content {
-    if el
-        .value()
-        .classes()
-        .find(|c| FIGURE_CLASSES.contains(c))
-        .is_none()
-    {
-        eprintln!("Unexpected div content tag. Ignoring...\n{}", el.html());
-        return Content::Empty;
-    }
     let img = el
         .select(&Selector::parse("img").unwrap())
         .next()
@@ -208,4 +234,22 @@ pub fn handle_div<F: Fn(&scraper::Node) -> bool>(
         )
         .expect("Failed to write figure file");
     Content::Figure { caption, path }
+}
+
+pub fn flatten_div<F: Fn(&scraper::Node) -> bool>(
+    el: ElementRef,
+    ignore: &F,
+    config: &Config,
+) -> Vec<Content> {
+    if el
+        .value()
+        .classes()
+        .find(|c| FIGURE_CLASSES.contains(c))
+        .is_some()
+    {
+        return vec![handle_figure(el, ignore, config)];
+    }
+    el.child_elements()
+        .flat_map(|child| Content::flatten_element(child, ignore, config))
+        .collect()
 }

@@ -21,6 +21,6 @@ fn main() {
     let article = Article::parse(&html, &notes_html, &config).expect("Failed to parse article");
 
     article
-        .write_to_file(&config.outname)
+        .write_to_file(&config)
         .expect("Failed to write output");
 }

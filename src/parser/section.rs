@@ -44,7 +44,11 @@ impl Section {
             .peek()
             .is_some_and(|el| !el.value().name().starts_with('h'))
         {
-            text.push(Content::from_element(iter.next().unwrap(), &|_| false, config));
+            text.extend(Content::flatten_element(
+                iter.next().unwrap(),
+                &|_| false,
+                config,
+            ));
         }
 
         Self {
@@ -60,9 +64,7 @@ impl Section {
             "{} {}{}\n\n{}",
             "#".repeat(self.level as usize),
             self.title,
-            self.id
-                .map(|id| format!(" {{#{id}}}"))
-                .unwrap_or_default(),
+            self.id.map(|id| format!(" {{#{id}}}")).unwrap_or_default(),
             self.text
                 .into_iter()
                 .map(Content::markdown)
