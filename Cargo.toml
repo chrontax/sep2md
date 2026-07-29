@@ -4,6 +4,10 @@ authors = ["chrontax"]
 license = "MIT"
 version = "1.0.0"
 edition = "2024"
+readme = "README.md"
+homepage = "https://github.com/chrontax/sep2md"
+repository = "https://github.com/chrontax/sep2md"
+description = "Generate markdown from SEP articles"
 
 [dependencies]
 reqwest = { version = "0.13.4", features = ["blocking"] }
