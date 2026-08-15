@@ -3,6 +3,7 @@ mod content;
 mod error;
 mod fetch;
 mod parser;
+mod utils;
 
 use config::Config;
 use parser::Article;

@@ -6,6 +6,7 @@ use scraper::{Html, Selector};
 use crate::config::Config;
 use crate::content::Content;
 use crate::content::inline::markdownify;
+use crate::utils::download_figure;
 
 mod section;
 pub use section::Section;
@@ -15,6 +16,7 @@ const SKIP_ELEMENTS: [&str; 1] = ["hr"];
 #[derive(Debug)]
 pub struct Article {
     pub title: String,
+    pub top_image: Option<String>,
     pub pub_info: String,
     pub preamble: Vec<Content>,
     pub main_text: Vec<Section>,
@@ -37,6 +39,7 @@ impl Article {
             return Err(crate::error::Error::HtmlParse(errors));
         }
         let title = parse_title(&document)?;
+        let top_image = parse_top_image(&document, config)?;
         let pub_info = parse_pub_info(&document, config);
         let preamble = parse_preamble(&document, config);
         let main_text = parse_main_text(&document, config)?;
@@ -47,6 +50,7 @@ impl Article {
         let notes = parse_notes(notes_html, config)?;
         Ok(Article {
             title,
+            top_image,
             pub_info,
             preamble,
             main_text,
@@ -63,6 +67,10 @@ impl Article {
         writeln!(f, "# {}\n", self.title)?;
         if !self.pub_info.is_empty() {
             writeln!(f, "{}\n", self.pub_info)?;
+        }
+
+        if let Some(url) = self.top_image {
+            writeln!(f, "![](figures/{url})\n")?;
         }
 
         for content in self.preamble {
@@ -209,7 +217,12 @@ fn parse_notes(html: &str, config: &Config) -> Result<Vec<Vec<Content>>, crate::
                 .flat_map(|el| {
                     Content::flatten_element(
                         el,
-                        &|node| node.as_element().is_some_and(|el| el.name() == "a"),
+                        &|node| {
+                            node.as_element().is_some_and(|el| {
+                                el.name() == "a"
+                                    && el.attr("href").is_some_and(|s| s.contains("#ref-"))
+                            })
+                        },
                         config,
                     )
                 })
@@ -217,4 +230,19 @@ fn parse_notes(html: &str, config: &Config) -> Result<Vec<Vec<Content>>, crate::
         );
     }
     Ok(notes)
+}
+
+fn parse_top_image(
+    document: &Html,
+    config: &Config,
+) -> Result<Option<String>, crate::error::Error> {
+    let url = document
+        .select(&Selector::parse("#aueditable > p > img").unwrap())
+        .next()
+        .and_then(|el| el.attr("src"))
+        .map(String::from);
+    if let Some(ref url) = url {
+        download_figure(url, config)?;
+    }
+    Ok(url)
 }

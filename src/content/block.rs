@@ -1,8 +1,7 @@
-use std::{fs, io::Write};
-
 use scraper::{ElementRef, Selector};
 
 use crate::config::Config;
+use crate::utils::download_figure;
 
 use super::Content;
 use super::inline::markdownify;
@@ -220,19 +219,7 @@ fn handle_figure<F: Fn(&scraper::Node) -> bool>(
         .next()
         .map(|p| markdownify(p, ignore, config).trim().to_string())
         .unwrap_or_else(|| img.value().attr("alt").unwrap_or("").to_string());
-    eprintln!("Downloading figure to: figures/{path}");
-    if !matches!(fs::exists("figures"), Ok(true)) {
-        fs::create_dir("figures").expect("Failed to create figures directory");
-    }
-    std::fs::File::create(format!("figures/{path}"))
-        .expect("Failed to create figure file")
-        .write_all(
-            &reqwest::blocking::get(format!("{}/{}", config.base_url, path))
-                .expect("Failed to download figure")
-                .bytes()
-                .expect("Failed to read figure bytes"),
-        )
-        .expect("Failed to write figure file");
+    download_figure(&path, config).expect("Failed to download figure");
     Content::Figure { caption, path }
 }
 

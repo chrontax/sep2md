@@ -31,7 +31,7 @@ fn superscript_handler(el: ElementRef, out: &mut String, _config: &Config) {
         out.push_str(&format!("[^{id}]"));
     } else {
         let text = el.text().next().unwrap_or("");
-        out.push_str(&format!("<sup>{text}</sup>"));
+        out.push_str(&format!("^{text}^"));
     }
 }
 
@@ -46,7 +46,7 @@ fn strong_handler(el: ElementRef, out: &mut String, config: &Config) {
 
 fn sub_handler(el: ElementRef, out: &mut String, config: &Config) {
     let inner = markdownify(el, &|_| false, config);
-    out.push_str(&format!("<sub>{inner}</sub>"));
+    out.push_str(&format!("~{inner}~"));
 }
 
 fn nested_ul_handler(el: ElementRef, out: &mut String, config: &Config) {
@@ -73,7 +73,11 @@ fn nested_ol_handler(el: ElementRef, out: &mut String, config: &Config) {
     out.push_str("\x00BLOCK_END\x00");
 }
 
-const INLINE_HANDLERS: [(&str, InlineHandler); 11] = [
+fn br_handler(_: ElementRef, out: &mut String, _: &Config) {
+    out.push('\\');
+}
+
+const INLINE_HANDLERS: [(&str, InlineHandler); 12] = [
     ("em", emphasis_handler),
     ("i", emphasis_handler),
     ("a", link_handler),
@@ -85,6 +89,7 @@ const INLINE_HANDLERS: [(&str, InlineHandler); 11] = [
     ("b", strong_handler),
     ("ul", nested_ul_handler),
     ("ol", nested_ol_handler),
+    ("br", br_handler),
 ];
 
 pub fn markdownify<F: Fn(&Node) -> bool>(
@@ -99,7 +104,11 @@ pub fn markdownify<F: Fn(&Node) -> bool>(
             continue;
         }
         if value.is_text() {
-            result += value.as_text().unwrap();
+            result += &value
+                .as_text()
+                .unwrap()
+                .replace('<', "&lt;")
+                .replace('>', "&gt;");
         } else if value.is_element() {
             let child_el = value.as_element().unwrap();
             if let Some((_, handler)) = INLINE_HANDLERS
@@ -132,7 +141,7 @@ pub fn markdownify<F: Fn(&Node) -> bool>(
             break;
         }
     }
-    result = result.replace('\n', " ");
+    result = result.replace('\n', " ").replace('\\', " \\\n");
     for (idx, block) in blocks.into_iter().enumerate() {
         let placeholder = format!("\x00BLOCK{idx}\x00");
         result = result.replace(&placeholder, &block);

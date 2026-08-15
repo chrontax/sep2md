@@ -54,9 +54,6 @@ impl Content {
                 .collect::<String>(),
             Self::Table { caption, rows } => {
                 let mut out = String::new();
-                if let Some(c) = caption {
-                    out.push_str(&format!("**{c}**\n\n"));
-                }
                 if rows.is_empty() {
                     return out;
                 }
@@ -90,6 +87,9 @@ impl Content {
                     out.push('\n');
                 }
                 out.push('\n');
+                if let Some(c) = caption {
+                    out.push_str(&format!(": {c}\n\n"));
+                }
                 out
             }
             Self::Empty => String::new(),
